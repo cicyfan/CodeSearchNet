@@ -28,18 +28,18 @@ Run with "-h" to see full command line options.
 Note that this takes around 2 hours to make predictions on the baseline model.
 
 This script generates ranking results over the CodeSearchNet corpus for a given model by scoring their relevance
-(using that model) to 99 search queries of the CodeSearchNet Challenge. We use cosine distance between the learned 
+(using that model) to 99 search queries of the CodeSearchNet Challenge. We use cosine distance between the learned
 representations of the natural language queries and the code, which is stored in jsonlines files with this format:
-https://github.com/github/CodeSearchNet#preprocessed-data-format. The 99 challenge queries are located in 
-this file: https://github.com/github/CodeSearchNet/blob/master/resources/queries.csv. 
+https://github.com/github/CodeSearchNet#preprocessed-data-format. The 99 challenge queries are located in
+this file: https://github.com/github/CodeSearchNet/blob/master/resources/queries.csv.
 To download the full CodeSearchNet corpus, see the README at the root of this repository.
 
-Note that this script is specific to methods and code in our baseline model and may not generalize to new models. 
+Note that this script is specific to methods and code in our baseline model and may not generalize to new models.
 We provide it as a reference and in order to be transparent about our baseline submission to the CodeSearchNet Challenge.
 
 This script produces a CSV file of model predictions with the following fields: 'query', 'language', 'identifier', and 'url':
       * language: the programming language for the given query, e.g. "python".  This information is available as a field in the data to be scored.
-      * query: the textual representation of the query, e.g. "int to string" .  
+      * query: the textual representation of the query, e.g. "int to string" .
       * identifier: this is an optional field that can help you track your data
       * url: the unique GitHub URL to the returned results, e.g. "https://github.com/JamesClonk/vultr/blob/fed59ad207c9bda0a5dfe4d18de53ccbb3d80c91/cmd/commands.go#L12-L190". This information is available as a field in the data to be scored.
 
@@ -73,7 +73,7 @@ def query_model(query, model, indices, language, topk=100):
 
 if __name__ == '__main__':
     args = docopt(__doc__)
-    
+
     queries = pd.read_csv('../resources/queries.csv')
     queries = list(queries['query'].values)
 
@@ -111,26 +111,90 @@ if __name__ == '__main__':
         path=model_path,
         is_train=False,
         hyper_overrides={})
-    
+
     predictions = []
-    for language in ('python', 'go', 'javascript', 'java', 'php', 'ruby'):
-        print("Evaluating language: %s" % language)
-        definitions = pickle.load(open('../resources/data/{}_dedupe_definitions_v2.pkl'.format(language), 'rb'))
-        indexes = [{'code_tokens': d['function_tokens'], 'language': d['language']} for d in tqdm(definitions)]
-        code_representations = model.get_code_representations(indexes)
+    #for language in ('python', 'go', 'javascript', 'java', 'php', 'ruby'):
+        #print("Evaluating language: %s" % language)
+        #definitions = pickle.load(open('../resources/data/{}_dedupe_definitions_v2.pkl'.format(language), 'rb'))
+        #indexes = [{'code_tokens': d['function_tokens'], 'language': d['language']} for d in tqdm(definitions)]
+        #code_representations = model.get_code_representations(indexes)
 
-        indices = AnnoyIndex(code_representations[0].shape[0], 'angular')
-        for index, vector in tqdm(enumerate(code_representations)):
-            if vector is not None:
-                indices.add_item(index, vector)
-        indices.build(10)
+        #indices = AnnoyIndex(code_representations[0].shape[0], 'angular')
+        #for index, vector in tqdm(enumerate(code_representations)):
+         #   if vector is not None:
+          #      indices.add_item(index, vector)
+        #indices.build(10)
 
-        for query in queries:
-            for idx, _ in zip(*query_model(query, model, indices, language)):
-                predictions.append((query, language, definitions[idx]['identifier'], definitions[idx]['url']))
+        #for query in queries:
+         #   for idx, _ in zip(*query_model(query, model, indices, language)):
+          #      predictions.append((query, language, definitions[idx]['identifier'], definitions[idx]['url']))
+
+    #df = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
+    #df.to_csv(predictions_csv, index=False)
+    
+    
+    language = 'python'
+    print("Evaluating language: %s" % language)
+    definitions = pickle.load(open('../resources/data/{}_dedupe_definitions_v2.pkl'.format(language), 'rb'))
+    indexes = [{'code_tokens': d['function_tokens'], 'language': d['language']} for d in tqdm(definitions)]
+    code_representations = model.get_code_representations(indexes)
+
+    indices = AnnoyIndex(code_representations[0].shape[0], 'angular')
+    for index, vector in tqdm(enumerate(code_representations)):
+        if vector is not None:
+            indices.add_item(index, vector)
+    indices.build(10)
+
+    for query in queries:
+        for idx, _ in zip(*query_model(query, model, indices, language)):
+            predictions.append((query, language, definitions[idx]['identifier'], definitions[idx]['url']))
 
     df = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
     df.to_csv(predictions_csv, index=False)
+    #df.to_csv(predictions_csv, index=False)
+
+    # #proposed solution (we can turn this into a function)
+    # predictions = []
+    # for language in ('python', 'go', 'javascript'):
+    #     print("Evaluating language: %s" % language)
+    #     definitions = pickle.load(open('../resources/data/{}_dedupe_definitions_v2.pkl'.format(language), 'rb'))
+    #     indexes = [{'code_tokens': d['function_tokens'], 'language': d['language']} for d in tqdm(definitions)]
+    #     code_representations = model.get_code_representations(indexes)
+    #
+    #     indices = AnnoyIndex(code_representations[0].shape[0], 'angular')
+    #     for index, vector in tqdm(enumerate(code_representations)):
+    #         if vector is not None:
+    #             indices.add_item(index, vector)
+    #     indices.build(10)
+    #
+    #     for query in queries:
+    #         for idx, _ in zip(*query_model(query, model, indices, language)):
+    #             predictions.append((query, language, definitions[idx]['identifier'], definitions[idx]['url']))
+    #
+    # df1 = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
+    #
+    # predictions = []
+    # for language in ('java', 'php', 'ruby'):
+    #     print("Evaluating language: %s" % language)
+    #     definitions = pickle.load(open('../resources/data/{}_dedupe_definitions_v2.pkl'.format(language), 'rb'))
+    #     indexes = [{'code_tokens': d['function_tokens'], 'language': d['language']} for d in tqdm(definitions)]
+    #     code_representations = model.get_code_representations(indexes)
+    #
+    #     indices = AnnoyIndex(code_representations[0].shape[0], 'angular')
+    #     for index, vector in tqdm(enumerate(code_representations)):
+    #         if vector is not None:
+    #             indices.add_item(index, vector)
+    #     indices.build(10)
+    #
+    #     for query in queries:
+    #         for idx, _ in zip(*query_model(query, model, indices, language)):
+    #             predictions.append((query, language, definitions[idx]['identifier'], definitions[idx]['url']))
+    #
+    # df2 = pd.DataFrame(predictions, columns=['query', 'language', 'identifier', 'url'])
+    #
+    # df = df1.append(df2)
+    # df.to_csv(predictions_csv, index=False)
+
 
 
     if run_id:

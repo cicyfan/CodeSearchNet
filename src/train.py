@@ -49,6 +49,8 @@ from model_test import compute_evaluation_metrics
 from models.model import Model
 import model_test as test
 
+import logging
+
 def run_train(model_class: Type[Model],
               train_data_dirs: List[RichPath],
               valid_data_dirs: List[RichPath],
@@ -80,7 +82,7 @@ def run_train(model_class: Type[Model],
         # We are in Philly write out the model name in an auxiliary file
         with open(os.path.join(save_folder, philly_job_id+'.job'), 'w') as f:
             f.write(os.path.basename(model.model_save_path))
-    
+
     wandb.config.update(model.hyperparameters)
     model.train_log("Loading training and validation data.")
     train_data = model.load_data_from_dirs(train_data_dirs, is_test=False, max_files_per_dir=max_files_per_dir, parallelize=parallelize)
@@ -119,7 +121,7 @@ def run(arguments, tag_in_vcs=False) -> None:
     train_data_dirs = test.expand_data_path(arguments['TRAIN_DATA_PATH'], azure_info_path)
     valid_data_dirs = test.expand_data_path(arguments['VALID_DATA_PATH'], azure_info_path)
     test_data_dirs = test.expand_data_path(arguments['TEST_DATA_PATH'], azure_info_path)
-    
+
     # default model save location
     if not arguments['SAVE_FOLDER']:
         arguments['SAVE_FOLDER'] =  str(dir_path.parent/'resources/saved_models/')
@@ -187,5 +189,6 @@ def run(arguments, tag_in_vcs=False) -> None:
 
 
 if __name__ == '__main__':
+    logging.basicConfig(filename='LOG.log',filemode='w',level=logging.INFO)
     args = docopt(__doc__)
     run_and_debug(lambda: run(args), args['--debug'])

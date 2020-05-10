@@ -16,6 +16,8 @@ from dpu_utils.utils import RichPath
 from utils.py_utils import run_jobs_in_parallel
 from encoders import Encoder, QueryType
 
+import logging
+
 
 LoadedSamples = Dict[str, List[Dict[str, Any]]]
 SampleId = Tuple[str, int]
@@ -86,7 +88,7 @@ class Model(ABC):
                 'optimizer': 'Adam',
                 'seed': 0,
                 'dropout_keep_rate': 0.9,
-                'learning_rate': 0.01,
+                'learning_rate': 0.005,
                 'learning_rate_code_scale_factor': 1.,
                 'learning_rate_query_scale_factor': 1.,
                 'learning_rate_decay': 0.98,
@@ -154,7 +156,8 @@ class Model(ABC):
         self.__sess = tf.Session(graph=graph, config=config)
 
         # save directory as tensorboard.
-        self.__tensorboard_dir = log_save_dir
+        #self.__tensorboard_dir = log_save_dir
+        self.__tensorboard_dir = '/home/paperspace/Documents'
 
     @property
     def query_metadata(self):
@@ -281,7 +284,14 @@ class Model(ABC):
                 return self.__query_encoder.get_token_embeddings()
 
     def _make_loss(self) -> None:
+        a = self.hyperparameters['loss']
+        logging.info(f'which loss: {a}')
+        a = self.ops['query_representations']
+        b = self.ops['code_representations']
+        logging.info(f'query_representations shape {a.shape}')
+        logging.info(f'code_representations shape {b.shape}')
         if self.hyperparameters['loss'] == 'softmax':
+
             logits = tf.matmul(self.ops['query_representations'],
                                self.ops['code_representations'],
                                transpose_a=False,
@@ -304,10 +314,13 @@ class Model(ABC):
                                             transpose_b=True,
                                             name='code_query_cooccurrence_logits',
                                             )  # B x B
+            logging.info(f'cosine_sim {tf.shape(cosine_similarities)}')
             similarity_scores = cosine_similarities
 
             # A max-margin-like loss, but do not penalize negative cosine similarities.
             neg_matrix = tf.diag(tf.fill(dims=[tf.shape(cosine_similarities)[0]], value=float('-inf')))
+            logging.info('neg_matrix')
+            logging.info(neg_matrix)
             per_sample_loss = tf.maximum(0., self.hyperparameters['margin']
                                              - tf.diag_part(cosine_similarities)
                                              + tf.reduce_max(tf.nn.relu(cosine_similarities + neg_matrix),
@@ -362,6 +375,8 @@ class Model(ABC):
         Constructs self.ops['train_step'] from self.ops['loss'] and hyperparameters.
         """
         optimizer_name = self.hyperparameters['optimizer'].lower()
+        #adam selected
+        #logging.info(f'optimizer: {optimizer_name}')
         if optimizer_name == 'sgd':
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.hyperparameters['learning_rate'])
         elif optimizer_name == 'rmsprop':
@@ -375,7 +390,11 @@ class Model(ABC):
 
         # Calculate and clip gradients
         trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+        logging.info(f'trainable vars type: {type(trainable_vars)}')
+        logging.info(f'trainable vars length {len(trainable_vars)}')
+        logging.info(trainable_vars)
         gradients = tf.gradients(self.ops['loss'], trainable_vars)
+        #logging.info(self.hyperparameters['gradient_clip']) gradient_clip = 1
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, self.hyperparameters['gradient_clip'])
         pruned_clipped_gradients = []
         for (gradient, trainable_var) in zip(clipped_gradients, trainable_vars):
@@ -450,7 +469,7 @@ class Model(ABC):
 
     def load_data_from_dirs(self, data_dirs: List[RichPath], is_test: bool,
                             max_files_per_dir: Optional[int] = None,
-                            return_num_original_samples: bool = False, 
+                            return_num_original_samples: bool = False,
                             parallelize: bool = True) -> Union[LoadedSamples, Tuple[LoadedSamples, int]]:
         return self.load_data_from_files(data_files=list(get_data_files_from_directory(data_dirs, max_files_per_dir)),
                                          is_test=is_test,
@@ -800,14 +819,14 @@ class Model(ABC):
                        'val-loss': val_loss,
                        'val-mrr': val_mrr,
                        'val-time-sec': val_time}
-                
+
                 # log to wandb
                 wandb.log(log)
-            
+
                 # log to tensorboard
                 for key in log:
                     if key != 'epoch':
-                        self._log_tensorboard_scalar(tag=key, 
+                        self._log_tensorboard_scalar(tag=key,
                                                      value=log[key],
                                                      step=epoch_number)
 
@@ -863,6 +882,7 @@ class Model(ABC):
         """
         tensorized_data = defaultdict(list)  # type: Dict[str, List[Dict[str, Any]]]
         sample_to_tensorised_data_id = []  # type: List[Optional[SampleId]]
+        counter = 0
         for raw_sample in raw_data:
             language = raw_sample['language']
             if language.startswith('python'):
@@ -874,6 +894,19 @@ class Model(ABC):
                 tensorized_data[language].append(sample)
             else:
                 sample_to_tensorised_data_id.append(None)
+
+            if counter == 0:
+                logging.info('rawSampleInComputeRepr')
+                for k,v in raw_sample.items():
+                    logging.info(k)
+                    logging.info(v)
+                logging.info('sampleInConputeRepr')
+                for k,v in sample.items():
+                    logging.info(k)
+                    logging.info(v)
+                logging.info('sample_to_tensorised_data_id')
+                logging.info(sample_to_tensorised_data_id)
+                counter += 1
         assert len(sample_to_tensorised_data_id) == len(raw_data)
 
         data_generator = self.__split_data_into_minibatches(tensorized_data,
@@ -890,6 +923,8 @@ class Model(ABC):
             original_tensorised_data_ids.extend(batch_original_tensorised_data_ids)
 
         computed_representations = np.concatenate(computed_representations, axis=0)
+        logging.info('-----------------128 Represent-------------------')
+        logging.info(computed_representations[0])
         tensorised_data_id_to_representation_idx = {tensorised_data_id: repr_idx
                                                     for (repr_idx, tensorised_data_id) in enumerate(original_tensorised_data_ids)}
         reordered_representations: List = []
